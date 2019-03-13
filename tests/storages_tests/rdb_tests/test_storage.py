@@ -2,7 +2,6 @@ from mock import patch
 import pytest
 import sys
 import tempfile
-from typing import Dict  # NOQA
 
 from optuna.distributions import BaseDistribution  # NOQA
 from optuna.distributions import CategoricalDistribution
@@ -18,7 +17,11 @@ from optuna.structs import StorageInternalError
 from optuna.structs import StudyDirection
 from optuna.structs import StudySummary
 from optuna.structs import TrialState
+from optuna import types
 from optuna import version
+
+if types.TYPE_CHECKING:
+    from typing import Dict  # NOQA
 
 
 def test_init():
@@ -215,3 +218,16 @@ def test_commit():
     session.add(v)
     with pytest.raises(StorageInternalError):
         storage._commit(session)
+
+
+def test_create_new_trial_number():
+    # type: () -> None
+
+    storage = create_test_storage()
+    study_id = storage.create_new_study_id()
+
+    trial_id = storage.create_new_trial_id(study_id)
+    assert storage._create_new_trial_number(trial_id) == 0
+
+    trial_id = storage.create_new_trial_id(study_id)
+    assert storage._create_new_trial_number(trial_id) == 1

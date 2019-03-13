@@ -1,15 +1,18 @@
 import copy
 from datetime import datetime
 import threading
-from typing import Any  # NOQA
-from typing import Dict  # NOQA
-from typing import List  # NOQA
-from typing import Optional  # NOQA
 
 from optuna import distributions  # NOQA
 from optuna.storages import base
 from optuna.storages.base import DEFAULT_STUDY_NAME_PREFIX
 from optuna import structs
+from optuna import types
+
+if types.TYPE_CHECKING:
+    from typing import Any  # NOQA
+    from typing import Dict  # NOQA
+    from typing import List  # NOQA
+    from typing import Optional  # NOQA
 
 IN_MEMORY_STORAGE_STUDY_ID = 0
 IN_MEMORY_STORAGE_STUDY_UUID = '00000000-0000-0000-0000-000000000000'
@@ -135,16 +138,17 @@ class InMemoryStorage(base.BaseStorage):
             trial_id = len(self.trials)
             self.trials.append(
                 structs.FrozenTrial(
-                    trial_id=trial_id,
+                    number=trial_id,
                     state=structs.TrialState.RUNNING,
                     params={},
                     user_attrs={},
-                    system_attrs={},
+                    system_attrs={'_number': trial_id},
                     value=None,
                     intermediate_values={},
                     params_in_internal_repr={},
                     datetime_start=datetime.now(),
-                    datetime_complete=None))
+                    datetime_complete=None,
+                    trial_id=trial_id))
         return trial_id
 
     def set_trial_state(self, trial_id, state):
@@ -178,6 +182,11 @@ class InMemoryStorage(base.BaseStorage):
             self.trials[trial_id].params[param_name] = param_value_external
 
             return True
+
+    def get_trial_number_from_id(self, trial_id):
+        # type: (int) -> int
+
+        return trial_id
 
     def get_trial_param(self, trial_id, param_name):
         # type: (int, str) -> float
