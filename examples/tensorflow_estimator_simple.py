@@ -1,5 +1,5 @@
 """
-Optuna example that optimizes multi-layer perceptrons using Tensorflow.
+Optuna example that optimizes multi-layer perceptrons using Tensorflow (Estimator API).
 
 In this example, we optimize the validation accuracy of hand-written digit recognition using
 Tensorflow and MNIST. We optimize the neural network architecture as well as the optimizer
@@ -9,13 +9,13 @@ subset of it.
 We have the following two ways to execute this example:
 
 (1) Execute this code directly.
-    $ python tensorflow_simple.py
+    $ python tensorflow_estimator_simple.py
 
 
 (2) Execute through CLI.
     $ STUDY_NAME=`optuna create-study --storage sqlite:///example.db`
-    $ optuna study optimize tensorflow_simple.py objective --n-trials=100 --study $STUDY_NAME \
-      --storage sqlite:///example.db
+    $ optuna study optimize tensorflow_estimator_simple.py objective --n-trials=100 \
+      --study $STUDY_NAME --storage sqlite:///example.db
 
 """
 
@@ -24,12 +24,13 @@ from __future__ import print_function
 
 import numpy as np
 import shutil
+import tempfile
 import tensorflow as tf
 
 import optuna
 
-MODEL_DIR = "/tmp/mnist_convnet_model"
-BATCH_SIZE = 100
+MODEL_DIR = tempfile.mkdtemp()
+BATCH_SIZE = 128
 TRAIN_STEPS = 1000
 
 
@@ -40,10 +41,10 @@ def create_network(trial, features):
 
     n_layers = trial.suggest_int('n_layers', 1, 3)
     for i in range(n_layers):
-        n_units = int(trial.suggest_int('n_units_l{}'.format(i), 1, 128))
+        n_units = trial.suggest_int('n_units_l{}'.format(i), 1, 128)
         prev_layer = tf.layers.dense(inputs=prev_layer, units=n_units, activation=tf.nn.relu)
 
-    logits = tf.layers.dense(inputs=prev_layer, units=10, activation=tf.nn.relu)
+    logits = tf.layers.dense(inputs=prev_layer, units=10)
     return logits
 
 
@@ -65,30 +66,23 @@ def create_optimizer(trial):
 
 
 def model_fn(trial, features, labels, mode):
-    # Create network.
     logits = create_network(trial, features)
 
     predictions = {
-        # Generate predictions (for PREDICT and EVAL mode).
         "classes": tf.argmax(input=logits, axis=1),
-
-        # Add `softmax_tensor` to the graph. It is used for PREDICT.
         "probabilities": tf.nn.softmax(logits, name="softmax_tensor")
     }
 
     if mode == tf.estimator.ModeKeys.PREDICT:
         return tf.estimator.EstimatorSpec(mode=mode, predictions=predictions)
 
-    # Calculate Loss (for both TRAIN and EVAL modes).
     loss = tf.losses.sparse_softmax_cross_entropy(labels=labels, logits=logits)
 
-    # Configure the Training Op (for TRAIN mode).
     if mode == tf.estimator.ModeKeys.TRAIN:
         optimizer = create_optimizer(trial)
         train_op = optimizer.minimize(loss=loss, global_step=tf.train.get_global_step())
         return tf.estimator.EstimatorSpec(mode=mode, loss=loss, train_op=train_op)
 
-    # Add evaluation metrics (for EVAL mode).
     eval_metric_ops = {
         "accuracy": tf.metrics.accuracy(labels=labels, predictions=predictions["classes"])
     }
@@ -96,7 +90,6 @@ def model_fn(trial, features, labels, mode):
 
 
 def objective(trial):
-    # Load dataset.
     (train_data, train_labels), (eval_data, eval_labels) = tf.keras.datasets.mnist.load_data()
 
     train_data = train_data / np.float32(255)
@@ -105,22 +98,16 @@ def objective(trial):
     eval_data = eval_data / np.float32(255)
     eval_labels = eval_labels.astype(np.int32)
 
-    # Delete old model.
-    model_dir = "{}/{}".format(MODEL_DIR, trial.trial_id)
-    shutil.rmtree(model_dir, ignore_errors=True)
-
-    # Create estimator.
+    model_dir = "{}/{}".format(MODEL_DIR, trial.number)
     mnist_classifier = tf.estimator.Estimator(
         model_fn=lambda features, labels, mode: model_fn(trial, features, labels, mode),
         model_dir=model_dir)
 
-    # Train the model.
     train_input_fn = tf.estimator.inputs.numpy_input_fn(
         x={"x": train_data}, y=train_labels, batch_size=BATCH_SIZE, num_epochs=None, shuffle=True)
 
     mnist_classifier.train(input_fn=train_input_fn, steps=TRAIN_STEPS)
 
-    # Evaluate the model.
     eval_input_fn = tf.estimator.inputs.numpy_input_fn(
         x={"x": eval_data}, y=eval_labels, num_epochs=1, shuffle=False)
 
@@ -130,7 +117,7 @@ def objective(trial):
 
 def main(unused_argv):
     study = optuna.create_study()
-    study.optimize(objective, n_trials=100)
+    study.optimize(objective, n_trials=25)
 
     print('Number of finished trials: ', len(study.trials))
 
@@ -142,6 +129,8 @@ def main(unused_argv):
     print('  Params: ')
     for key, value in trial.params.items():
         print('    {}: {}'.format(key, value))
+
+    shutil.rmtree(MODEL_DIR)
 
 
 if __name__ == "__main__":

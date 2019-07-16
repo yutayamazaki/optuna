@@ -54,12 +54,17 @@ def objective(trial, comm):
     optimizer.setup(model)
     optimizer = chainermn.create_multi_node_optimizer(optimizer, comm)
 
-    # Setup dataset and iterator.
-    train, test = chainer.datasets.get_mnist()
-    rng = np.random.RandomState(0)
-    train = chainer.datasets.SubDataset(
-        train, 0, N_TRAIN_EXAMPLES, order=rng.permutation(len(train)))
-    test = chainer.datasets.SubDataset(test, 0, N_TEST_EXAMPLES, order=rng.permutation(len(test)))
+    # Setup dataset and iterator. Only worker 0 loads the whole dataset.
+    # The dataset of worker 0 is evenly split and distributed to all workers.
+    if comm.rank == 0:
+        train, test = chainer.datasets.get_mnist()
+        rng = np.random.RandomState(0)
+        train = chainer.datasets.SubDataset(
+            train, 0, N_TRAIN_EXAMPLES, order=rng.permutation(len(train)))
+        test = chainer.datasets.SubDataset(
+            test, 0, N_TEST_EXAMPLES, order=rng.permutation(len(test)))
+    else:
+        train, test = None, None
 
     train = chainermn.scatter_dataset(train, comm, shuffle=True)
     test = chainermn.scatter_dataset(test, comm)
@@ -102,7 +107,7 @@ if __name__ == '__main__':
     study_name = sys.argv[1]
     storage_url = sys.argv[2]
 
-    study = optuna.Study(study_name, storage_url, pruner=optuna.pruners.MedianPruner())
+    study = optuna.load_study(study_name, storage_url, pruner=optuna.pruners.MedianPruner())
     comm = chainermn.create_communicator('naive')
     if comm.rank == 0:
         print('Study name:', study_name)

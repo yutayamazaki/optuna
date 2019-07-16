@@ -40,7 +40,7 @@ To turn on the pruning feature, you need to call :func:`~optuna.trial.Trial.repo
             trial.report(intermediate_value, step)
 
             # Handle pruning based on the intermediate value.
-            if trial.should_prune(step):
+            if trial.should_prune():
                 raise optuna.structs.TrialPruned()
 
         return 1.0 - clf.score(test_x, test_y)
@@ -55,19 +55,19 @@ Executing the script above:
 .. code-block:: bash
 
     $ python prune.py
-    [I 2018-11-21 17:27:57,836] Finished a trial resulted in value: 0.052631578947368474. Current best value is 0.052631578947368474 with parameters: {'alpha': 0.011428158279113485}.
-    [I 2018-11-21 17:27:57,963] Finished a trial resulted in value: 0.02631578947368418. Current best value is 0.02631578947368418 with parameters: {'alpha': 0.01862693201743629}.
-    [I 2018-11-21 17:27:58,164] Finished a trial resulted in value: 0.21052631578947367. Current best value is 0.02631578947368418 with parameters: {'alpha': 0.01862693201743629}.
-    [I 2018-11-21 17:27:58,333] Finished a trial resulted in value: 0.02631578947368418. Current best value is 0.02631578947368418 with parameters: {'alpha': 0.01862693201743629}.
-    [I 2018-11-21 17:27:58,617] Finished a trial resulted in value: 0.23684210526315785. Current best value is 0.02631578947368418 with parameters: {'alpha': 0.01862693201743629}.
-    [I 2018-11-21 17:27:58,642] Setting trial status as TrialState.PRUNED.
-    [I 2018-11-21 17:27:58,666] Setting trial status as TrialState.PRUNED.
-    [I 2018-11-21 17:27:58,675] Setting trial status as TrialState.PRUNED.
-    [I 2018-11-21 17:27:59,183] Finished a trial resulted in value: 0.39473684210526316. Current best value is 0.02631578947368418 with parameters: {'alpha': 0.01862693201743629}.
-    [I 2018-11-21 17:27:59,202] Setting trial status as TrialState.PRUNED.
+    [I 2018-11-21 17:27:57,836] Finished trial#0 resulted in value: 0.052631578947368474. Current best value is 0.052631578947368474 with parameters: {'alpha': 0.011428158279113485}.
+    [I 2018-11-21 17:27:57,963] Finished trial#1 resulted in value: 0.02631578947368418. Current best value is 0.02631578947368418 with parameters: {'alpha': 0.01862693201743629}.
+    [I 2018-11-21 17:27:58,164] Finished trial#2 resulted in value: 0.21052631578947367. Current best value is 0.02631578947368418 with parameters: {'alpha': 0.01862693201743629}.
+    [I 2018-11-21 17:27:58,333] Finished trial#3 resulted in value: 0.02631578947368418. Current best value is 0.02631578947368418 with parameters: {'alpha': 0.01862693201743629}.
+    [I 2018-11-21 17:27:58,617] Finished trial#4 resulted in value: 0.23684210526315785. Current best value is 0.02631578947368418 with parameters: {'alpha': 0.01862693201743629}.
+    [I 2018-11-21 17:27:58,642] Setting status of trial#5 as TrialState.PRUNED.
+    [I 2018-11-21 17:27:58,666] Setting status of trial#6 as TrialState.PRUNED.
+    [I 2018-11-21 17:27:58,675] Setting status of trial#7 as TrialState.PRUNED.
+    [I 2018-11-21 17:27:59,183] Finished trial#8 resulted in value: 0.39473684210526316. Current best value is 0.02631578947368418 with parameters: {'alpha': 0.01862693201743629}.
+    [I 2018-11-21 17:27:59,202] Setting status of trial#9 as TrialState.PRUNED.
     ...
 
-We can see ``Setting trial status as TrialState.PRUNED`` in the log messages.
+We can see ``Setting status of trial#{} as TrialState.PRUNED`` in the log messages.
 This means several trials are stopped before they finish all iterations.
 
 
@@ -80,6 +80,7 @@ To implement pruning mechanism in much simpler forms, Optuna provides integratio
 - Chainer: :class:`optuna.integration.ChainerPruningExtension`
 - Keras: :class:`optuna.integration.KerasPruningCallback`
 - TensorFlow :class:`optuna.integration.TensorFlowPruningHook`
+- MXNet :class:`optuna.integration.MXNetPruningCallback`
 
 For example, :class:`~optuna.integration.XGBoostPruningCallback` introduces pruning without directly changing the logic of training iteration.
 (See also `example <https://github.com/pfnet/optuna/blob/master/examples/pruning/xgboost_integration.py>`_ for the entire script.)

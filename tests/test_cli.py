@@ -4,14 +4,8 @@ import pytest
 import re
 import shutil
 import subprocess
+from subprocess import CalledProcessError
 import tempfile
-from types import TracebackType  # NOQA
-from typing import Any  # NOQA
-from typing import IO  # NOQA
-from typing import List  # NOQA
-from typing import Optional  # NOQA
-from typing import Tuple  # NOQA
-from typing import Type  # NOQA
 
 import optuna
 from optuna.cli import Studies
@@ -19,6 +13,16 @@ from optuna.storages.base import DEFAULT_STUDY_NAME_PREFIX
 from optuna.storages import RDBStorage
 from optuna.structs import CLIUsageError
 from optuna.trial import Trial  # NOQA
+from optuna import types
+
+if types.TYPE_CHECKING:
+    from types import TracebackType  # NOQA
+    from typing import Any  # NOQA
+    from typing import IO  # NOQA
+    from typing import List  # NOQA
+    from typing import Optional  # NOQA
+    from typing import Tuple  # NOQA
+    from typing import Type  # NOQA
 
 TEST_CONFIG_TEMPLATE = 'default_storage: sqlite:///{default_storage}\n'
 
@@ -126,10 +130,9 @@ def test_create_study_command_with_direction():
         assert storage.get_study_direction(study_id) == optuna.structs.StudyDirection.MINIMIZE
 
         command = ['optuna', 'create-study', '--storage', storage_url, '--direction', 'maximize']
-
-        # Currently, 'maximize' is not implemented.
-        with pytest.raises(subprocess.CalledProcessError):
-            subprocess.check_call(command)
+        study_name = str(subprocess.check_output(command).decode().strip())
+        study_id = storage.get_study_id_from_name(study_name)
+        assert storage.get_study_direction(study_id) == optuna.structs.StudyDirection.MAXIMIZE
 
         command = ['optuna', 'create-study', '--storage', storage_url, '--direction', 'test']
 
@@ -303,7 +306,7 @@ def test_study_optimize_command(options):
         command = _add_option(command, '--config', config_path, 'config' in options)
         subprocess.check_call(command)
 
-        study = optuna.Study(storage=storage_url, study_name=study_name)
+        study = optuna.load_study(storage=storage_url, study_name=study_name)
         assert len(study.trials) == 10
         assert 'x' in study.best_params
 
@@ -359,3 +362,19 @@ def test_get_storage_url(tmpdir):
     empty_config = optuna.config.load_optuna_config(str(empty_config_file))
     with pytest.raises(CLIUsageError):
         optuna.cli.get_storage_url(None, empty_config)
+
+
+@pytest.mark.parametrize('options', [[], ['storage'], ['config'], ['storage', 'config']])
+def test_storage_upgrade_command(options):
+    # type: (List[str]) -> None
+
+    with StorageConfigSupplier(TEST_CONFIG_TEMPLATE) as (storage_url, config_path):
+        command = ['optuna', 'storage', 'upgrade']
+        command = _add_option(command, '--storage', storage_url, 'storage' in options)
+        command = _add_option(command, '--config', config_path, 'config' in options)
+
+        if len(options) == 0:
+            with pytest.raises(CalledProcessError):
+                subprocess.check_call(command)
+        else:
+            subprocess.check_call(command)

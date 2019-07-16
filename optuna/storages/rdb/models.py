@@ -11,15 +11,20 @@ from sqlalchemy import Integer
 from sqlalchemy import orm
 from sqlalchemy import String
 from sqlalchemy import UniqueConstraint
-from typing import Any  # NOQA
-from typing import List  # NOQA
-from typing import Optional  # NOQA
 
 from optuna import distributions
 from optuna.structs import StudyDirection
 from optuna.structs import TrialState
+from optuna import types
 
-SCHEMA_VERSION = 11
+if types.TYPE_CHECKING:
+    from typing import Any  # NOQA
+    from typing import List  # NOQA
+    from typing import Optional  # NOQA
+
+# Don't modify this version number anymore.
+# The schema management functionality has been moved to alembic.
+SCHEMA_VERSION = 12
 
 MAX_INDEXED_STRING_LENGTH = 512
 MAX_STRING_LENGTH = 2048
@@ -193,6 +198,14 @@ class TrialModel(BaseModel):
         # type: (orm.Session) -> List[TrialModel]
 
         return session.query(cls).all()
+
+    @classmethod
+    def get_all_trial_ids_where_study(cls, study, session):
+        # type: (StudyModel, orm.Session) -> List[int]
+
+        trials = session.query(cls.trial_id).filter(cls.study_id == study.study_id).all()
+
+        return [t.trial_id for t in trials]
 
 
 class TrialUserAttributeModel(BaseModel):

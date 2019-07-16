@@ -110,7 +110,7 @@ Optuna saves hyperparameter values with its corresponding objective value to sto
 but it discards intermediate objects such as machine learning models and neural network weights.
 To save models or weights, please use features of the machine learning library you used.
 
-We recommend saving :obj:`~optuna.trial.Trial.trial_id` with a model in order to identify its corresponding trial.
+We recommend saving :obj:`optuna.trial.Trial.number` with a model in order to identify its corresponding trial.
 For example, you can save SVM models trained in the objective function as follows:
 
 .. code-block:: python
@@ -121,7 +121,7 @@ For example, you can save SVM models trained in the objective function as follow
         clf.fit(X_train, y_train)
 
         # Save a trained model to a file.
-        with open('{}.pickle'.format(trial.trial_id), 'wb') as fout:
+        with open('{}.pickle'.format(trial.number), 'wb') as fout:
             pickle.dump(clf, fout)
         return 1.0 - accuracy_score(y_test, clf.predict(X_test))
 
@@ -130,7 +130,7 @@ For example, you can save SVM models trained in the objective function as follow
     study.optimize(objective, n_trials=100)
 
     # Load the best model.
-    with open('{}.pickle'.format(study.best_trial.trial_id), 'rb') as fin:
+    with open('{}.pickle'.format(study.best_trial.number), 'rb') as fin:
         best_clf = pickle.load(fin)
     print(accuracy_score(y_test, best_clf.predict(X_test)))
 
@@ -167,14 +167,14 @@ Errors raised in objective functions are shown as follows:
 
 .. code-block:: sh
 
-    [W 2018-12-07 16:38:36,889] Setting trial status as TrialState.FAIL because of \
+    [W 2018-12-07 16:38:36,889] Setting status of trial#0 as TrialState.FAIL because of \
     the following error: ValueError('A sample error in objective.')
 
 And trials which returned :obj:`NaN` are shown as follows:
 
 .. code-block:: sh
 
-    [W 2018-12-07 16:41:59,000] Setting trial status as TrialState.FAIL because the \
+    [W 2018-12-07 16:41:59,000] Setting status of trial#2 as TrialState.FAIL because the \
     objective function returned nan.
 
 You can also find the failed trials by checking the trial states as follows:
@@ -185,8 +185,8 @@ You can also find the failed trials by checking the trial states as follows:
 
 .. csv-table::
 
-    trial_id,state,value,...,params,system_attrs
-    0,TrialState.FAIL,,...,0,Setting trial status as TrialState.FAIL because of the following error: ValueError('A test error in objective.')
+    number,state,value,...,params,system_attrs
+    0,TrialState.FAIL,,...,0,Setting status of trial#0 as TrialState.FAIL because of the following error: ValueError('A test error in objective.')
     1,TrialState.COMPLETE,1269,...,1,
 
 

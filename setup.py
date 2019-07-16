@@ -31,7 +31,8 @@ def get_install_requires():
     # type: () -> List[str]
 
     install_requires = [
-        'sqlalchemy>=1.1.0', 'numpy', 'scipy', 'six', 'typing', 'cliff', 'colorlog', 'pandas'
+        'sqlalchemy>=1.1.0', 'numpy', 'scipy', 'six',
+        'cliff', 'colorlog', 'pandas', 'alembic', 'typing'
     ]
     if sys.version_info[0] == 2:
         install_requires.extend(['enum34'])
@@ -43,11 +44,12 @@ def get_extras_require():
 
     extras_require = {
         'checking': ['autopep8', 'hacking'],
-        'testing':
-        ['pytest', 'mock', 'bokeh', 'plotly', 'chainer>=5.0.0', 'xgboost', 'mpi4py', 'lightgbm'],
-        # TODO(higumachan): merge 'keras' to 'testing' after Tensorflow supports Python 3.7.
-        'keras': ['keras', 'tensorflow'],
+        'testing': [
+            'pytest', 'mock', 'bokeh', 'plotly', 'chainer>=5.0.0', 'xgboost', 'mpi4py', 'lightgbm',
+            'keras', 'mxnet', 'scikit-optimize', 'tensorflow'
+        ],
         'document': ['sphinx', 'sphinx_rtd_theme'],
+        'codecov': ['pytest-cov', 'codecov'],
     }
     if sys.version_info >= (3, 5):  # mypy does not support Python 2.x.
         extras_require['checking'].append('mypy')
@@ -81,6 +83,13 @@ setup(
     author_email='akiba@preferred.jp',
     url='https://optuna.org/',
     packages=find_packages(),
+    package_data={
+        'optuna': [
+            'storages/rdb/alembic.ini',
+            'storages/rdb/alembic/*.*',
+            'storages/rdb/alembic/versions/*.*'
+        ]
+    },
     install_requires=get_install_requires(),
     tests_require=get_extras_require()['testing'],
     extras_require=get_extras_require(),

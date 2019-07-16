@@ -1,14 +1,17 @@
 import abc
 import numpy as np
 import six
-from typing import Any  # NOQA
-from typing import Dict  # NOQA
-from typing import List  # NOQA
-from typing import Optional  # NOQA
-from typing import Tuple  # NOQA
 
 from optuna import distributions  # NOQA
 from optuna import structs  # NOQA
+from optuna import types
+
+if types.TYPE_CHECKING:
+    from typing import Any  # NOQA
+    from typing import Dict  # NOQA
+    from typing import List  # NOQA
+    from typing import Optional  # NOQA
+    from typing import Tuple  # NOQA
 
 DEFAULT_STUDY_NAME_PREFIX = 'no-name-'
 
@@ -54,6 +57,12 @@ class BaseStorage(object):
     @abc.abstractmethod
     def get_study_id_from_name(self, study_name):
         # type: (str) -> int
+
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def get_study_id_from_trial_id(self, trial_id):
+        # type: (int) -> int
 
         raise NotImplementedError
 
@@ -104,6 +113,12 @@ class BaseStorage(object):
     @abc.abstractmethod
     def set_trial_param(self, trial_id, param_name, param_value_internal, distribution):
         # type: (int, str, float, distributions.BaseDistribution) -> bool
+
+        raise NotImplementedError
+
+    @abc.abstractmethod
+    def get_trial_number_from_id(self, trial_id):
+        # type: (int) -> int
 
         raise NotImplementedError
 
@@ -166,7 +181,8 @@ class BaseStorage(object):
         if len(all_trials) == 0:
             raise ValueError('No trials are completed yet.')
 
-        # TODO(sano): Deal with maximize direction.
+        if self.get_study_direction(study_id) == structs.StudyDirection.MAXIMIZE:
+            return max(all_trials, key=lambda t: t.value)
         return min(all_trials, key=lambda t: t.value)
 
     def get_trial_params(self, trial_id):
@@ -198,16 +214,20 @@ class BaseStorage(object):
                 # TODO(Akiba): We also want to use pruned results
                 ]
 
-    # Methods for the median pruner
+    # Methods for PercentilePruner and MedianPruner
 
     def get_best_intermediate_result_over_steps(self, trial_id):
         # type: (int) -> float
 
-        return np.nanmin(
-            np.array(list(self.get_trial(trial_id).intermediate_values.values()), np.float))
+        values = np.array(list(self.get_trial(trial_id).intermediate_values.values()), np.float)
 
-    def get_median_intermediate_result_over_trials(self, study_id, step):
-        # type: (int, int) -> float
+        study_id = self.get_study_id_from_trial_id(trial_id)
+        if self.get_study_direction(study_id) == structs.StudyDirection.MAXIMIZE:
+            return np.nanmax(values)
+        return np.nanmin(values)
+
+    def get_percentile_intermediate_result_over_trials(self, study_id, step, percentile):
+        # type: (int, int, float) -> float
 
         all_trials = [
             t for t in self.get_all_trials(study_id) if t.state == structs.TrialState.COMPLETE
@@ -216,14 +236,27 @@ class BaseStorage(object):
         if len(all_trials) == 0:
             raise ValueError("No trials have been completed.")
 
+        direction = self.get_study_direction(study_id)
+        if direction == structs.StudyDirection.MAXIMIZE:
+            percentile = 100 - percentile
+
         return float(
-            np.nanmedian(
+            np.nanpercentile(
                 np.array([
                     t.intermediate_values[step]
                     for t in all_trials if step in t.intermediate_values
-                ], np.float)))
+                ], np.float),
+                percentile))
 
     def remove_session(self):
         # type: () -> None
 
         pass
+
+    def check_trial_is_updatable(self, trial_id, trial_state):
+        # type: (int, structs.TrialState) -> None
+
+        if trial_state.is_finished():
+            trial = self.get_trial(trial_id)
+            raise RuntimeError(
+                "Trial#{} has already finished and can not be updated.".format(trial.number))

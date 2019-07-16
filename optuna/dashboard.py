@@ -16,14 +16,17 @@ import collections
 import numpy as np
 import threading
 import time
-from typing import Any  # NOQA
-from typing import Dict  # NOQA
-from typing import List  # NOQA
-from typing import Optional  # NOQA
 
 import optuna.logging
 import optuna.structs
 import optuna.study
+from optuna import types
+
+if types.TYPE_CHECKING:
+    from typing import Any  # NOQA
+    from typing import Dict  # NOQA
+    from typing import List  # NOQA
+    from typing import Optional  # NOQA
 
 _mode = None  # type: Optional[str]
 _study = None  # type: Optional[optuna.study.Study]
@@ -108,10 +111,8 @@ if _available:
             return bokeh.models.widgets.DataTable(
                 source=self.cds,
                 columns=[
-                    bokeh.models.widgets.TableColumn(field=field, title=field) for field in [
-                        'trial_id', 'state', 'value', 'params', 'datetime_start',
-                        'datetime_complete'
-                    ]
+                    bokeh.models.widgets.TableColumn(field=field, title=field) for field in
+                    ['number', 'state', 'value', 'params', 'datetime_start', 'datetime_complete']
                 ])
 
         def update(
@@ -140,7 +141,7 @@ if _available:
             # type: (List[optuna.structs.FrozenTrial]) -> Dict[str, List[Any]]
 
             return {
-                'trial_id': [trial.trial_id for trial in trials],
+                'number': [trial.number for trial in trials],
                 'state': [trial.state.name for trial in trials],
                 'value': [trial.value for trial in trials],
                 'params': [str(trial.params) for trial in trials],

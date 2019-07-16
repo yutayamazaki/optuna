@@ -5,6 +5,8 @@ from typing import Dict
 from typing import NamedTuple
 from typing import Optional
 
+from optuna.distributions import BaseDistribution  # NOQA
+
 
 class TrialState(enum.Enum):
     """State of a :class:`~optuna.trial.Trial`.
@@ -28,7 +30,7 @@ class TrialState(enum.Enum):
     def is_finished(self):
         # type: () -> bool
 
-        return self == TrialState.COMPLETE or self == TrialState.PRUNED
+        return self != self.RUNNING
 
 
 class StudyDirection(enum.Enum):
@@ -50,22 +52,25 @@ class StudyDirection(enum.Enum):
 
 class FrozenTrial(
         NamedTuple('_BaseFrozenTrial', [
-            ('trial_id', int),
+            ('number', int),
             ('state', TrialState),
             ('value', Optional[float]),
             ('datetime_start', Optional[datetime]),
             ('datetime_complete', Optional[datetime]),
             ('params', Dict[str, Any]),
+            ('distributions', Dict[str, BaseDistribution]),
             ('user_attrs', Dict[str, Any]),
             ('system_attrs', Dict[str, Any]),
             ('intermediate_values', Dict[int, float]),
             ('params_in_internal_repr', Dict[str, float]),
+            ('trial_id', int),
         ])):
     """Status and results of a :class:`~optuna.trial.Trial`.
 
     Attributes:
-        trial_id:
-            Identifier of the :class:`~optuna.trial.Trial`.
+        number:
+            Unique and consecutive number of :class:`~optuna.trial.Trial` for each
+            :class:`~optuna.study.Study`. Note that this field uses zero-based numbering.
         state:
             :class:`TrialState` of the :class:`~optuna.trial.Trial`.
         value:
@@ -76,6 +81,8 @@ class FrozenTrial(
             Datetime where the :class:`~optuna.trial.Trial` finished.
         params:
             Dictionary that contains suggested parameters.
+        distributions:
+            Dictionary that contains the distributions of :attr:`params`.
         user_attrs:
             Dictionary that contains the attributes of the :class:`~optuna.trial.Trial` set with
             :func:`optuna.trial.Trial.set_user_attr`.
@@ -85,10 +92,15 @@ class FrozenTrial(
         intermediate_values:
             Intermediate objective values set with :func:`optuna.trial.Trial.report`.
         params_in_internal_repr:
-            Optuna's internal representation of :attr:`params`.
+            Optuna's internal representation of :attr:`params`. Note that this field is not
+            supposed to be used by library users.
+        trial_id:
+            Optuna's internal identifier of the :class:`~optuna.trial.Trial`. Note that this field
+            is not supposed to be used by library users. Instead, please use :attr:`number` and
+            :class:`~optuna.study.Study.study_id` to identify a :class:`~optuna.trial.Trial`.
     """
 
-    internal_fields = ['params_in_internal_repr']
+    internal_fields = ['distributions', 'params_in_internal_repr', 'trial_id']
 
 
 class StudySummary(
@@ -145,7 +157,7 @@ class TrialPruned(OptunaError):
             >>>     ...
             >>>     for step in range(n_train_iter):
             >>>         ...
-            >>>         if trial.should_prune(step):
+            >>>         if trial.should_prune():
             >>>             raise TrailPruned()
     """
 

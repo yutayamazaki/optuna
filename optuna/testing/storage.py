@@ -1,11 +1,14 @@
 import tempfile
-from types import TracebackType  # NOQA
-from typing import Any  # NOQA
-from typing import IO  # NOQA
-from typing import Optional  # NOQA
-from typing import Type  # NOQA
 
 import optuna
+from optuna import types
+
+if types.TYPE_CHECKING:
+    from types import TracebackType  # NOQA
+    from typing import Any  # NOQA
+    from typing import IO  # NOQA
+    from typing import Optional  # NOQA
+    from typing import Type  # NOQA
 
 SQLITE3_TIMEOUT = 300
 
@@ -14,11 +17,12 @@ class StorageSupplier(object):
 
     _common_tempfile = None  # type: Optional[IO[Any]]
 
-    def __init__(self, storage_specifier):
-        # type: (str) -> None
+    def __init__(self, storage_specifier, enable_cache=True):
+        # type: (str, bool) -> None
 
         self.storage_specifier = storage_specifier
         self.tempfile = None  # type: Optional[IO[Any]]
+        self.enable_cache = enable_cache
 
     def __enter__(self):
         # type: () -> Optional[optuna.storages.BaseStorage]
@@ -28,11 +32,19 @@ class StorageSupplier(object):
         elif self.storage_specifier == 'new':
             self.tempfile = tempfile.NamedTemporaryFile()
             url = 'sqlite:///{}'.format(self.tempfile.name)
-            return optuna.storages.RDBStorage(url, connect_args={'timeout': SQLITE3_TIMEOUT})
+            return optuna.storages.RDBStorage(
+                url,
+                engine_kwargs={'connect_args': {'timeout': SQLITE3_TIMEOUT}},
+                enable_cache=self.enable_cache,
+            )
         elif self.storage_specifier == 'common':
             assert self._common_tempfile is not None
             url = 'sqlite:///{}'.format(self._common_tempfile.name)
-            return optuna.storages.RDBStorage(url, connect_args={'timeout': SQLITE3_TIMEOUT})
+            return optuna.storages.RDBStorage(
+                url,
+                engine_kwargs={'connect_args': {'timeout': SQLITE3_TIMEOUT}},
+                enable_cache=self.enable_cache,
+            )
         else:
             assert False
 

@@ -12,9 +12,12 @@ This page contains a list of example codes written with Optuna.
 * [scikit-learn](./sklearn_simple.py)
 * [Chainer](./chainer_simple.py)
 * [ChainerMN](./chainermn_simple.py)
-* [LighGBM](./lightgbm_simple.py)
+* [LightGBM](./lightgbm_simple.py)
+* [MXNet](./mxnet_simple.py)
+* [PyTorch](./pytorch_simple.py)
 * [XGBoost](./xgboost_simple.py)
-* [Tensorflow](./tensorflow_simple.py)
+* [Tensorflow](./tensorflow_estimator_simple.py)
+* [Tensorflow(eager)](./tensorflow_eager_simple.py)
 
 ### An example where an objective function uses additional arguments
 
@@ -32,7 +35,9 @@ In addition, integration modules are available for the following libraries, prov
 * [pruning with Chainer integration module](./pruning/chainer_integration.py)
 * [pruning with XGBoost integration module](./pruning/xgboost_integration.py)
 * [pruning with LightGBM integration module](./pruning/lightgbm_integration.py)
-* [pruning with Tensorflow integration module](./pruning/tensorflow_integration.py)
+* [pruning with ChainerMN integration module](./pruning/chainermn_integration.py)
+* [pruning with Tensorflow integration module](./pruning/tensorflow_estimator_integration.py)
+* [pruning with Keras integration module](./pruning/keras_integration.py)
 
 ### Examples of Visualization
 

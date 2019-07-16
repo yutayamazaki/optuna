@@ -1,6 +1,6 @@
 from __future__ import absolute_import
 
-from mpi4py.MPI import Comm
+from mpi4py.MPI import Comm  # NOQA
 from typing import Any  # NOQA
 from typing import Callable  # NOQA
 from typing import Optional  # NOQA

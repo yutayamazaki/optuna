@@ -1,15 +1,18 @@
 import copy
 from datetime import datetime
 import threading
-from typing import Any  # NOQA
-from typing import Dict  # NOQA
-from typing import List  # NOQA
-from typing import Optional  # NOQA
 
 from optuna import distributions  # NOQA
 from optuna.storages import base
 from optuna.storages.base import DEFAULT_STUDY_NAME_PREFIX
 from optuna import structs
+from optuna import types
+
+if types.TYPE_CHECKING:
+    from typing import Any  # NOQA
+    from typing import Dict  # NOQA
+    from typing import List  # NOQA
+    from typing import Optional  # NOQA
 
 IN_MEMORY_STORAGE_STUDY_ID = 0
 IN_MEMORY_STORAGE_STUDY_UUID = '00000000-0000-0000-0000-000000000000'
@@ -30,7 +33,7 @@ class InMemoryStorage(base.BaseStorage):
         self.study_system_attrs = {}  # type: Dict[str, Any]
         self.study_name = DEFAULT_STUDY_NAME_PREFIX + IN_MEMORY_STORAGE_STUDY_UUID  # type: str
 
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
 
     def __getstate__(self):
         # type: () -> Dict[Any, Any]
@@ -41,7 +44,7 @@ class InMemoryStorage(base.BaseStorage):
     def __setstate__(self, state):
         # type: (Dict[Any, Any]) -> None
         self.__dict__.update(state)
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
 
     def create_new_study_id(self, study_name=None):
         # type: (Optional[str]) -> int
@@ -77,6 +80,11 @@ class InMemoryStorage(base.BaseStorage):
 
         if study_name != self.study_name:
             raise ValueError("No such study {}.".format(study_name))
+
+        return IN_MEMORY_STORAGE_STUDY_ID
+
+    def get_study_id_from_trial_id(self, trial_id):
+        # type: (int) -> int
 
         return IN_MEMORY_STORAGE_STUDY_ID
 
@@ -135,22 +143,26 @@ class InMemoryStorage(base.BaseStorage):
             trial_id = len(self.trials)
             self.trials.append(
                 structs.FrozenTrial(
-                    trial_id=trial_id,
+                    number=trial_id,
                     state=structs.TrialState.RUNNING,
                     params={},
+                    distributions={},
                     user_attrs={},
-                    system_attrs={},
+                    system_attrs={'_number': trial_id},
                     value=None,
                     intermediate_values={},
                     params_in_internal_repr={},
                     datetime_start=datetime.now(),
-                    datetime_complete=None))
+                    datetime_complete=None,
+                    trial_id=trial_id))
         return trial_id
 
     def set_trial_state(self, trial_id, state):
         # type: (int, structs.TrialState) -> None
 
         with self._lock:
+            self.check_trial_is_updatable(trial_id, self.trials[trial_id].state)
+
             self.trials[trial_id] = self.trials[trial_id]._replace(state=state)
             if state.is_finished():
                 self.trials[trial_id] = \
@@ -160,13 +172,14 @@ class InMemoryStorage(base.BaseStorage):
         # type: (int, str, float, distributions.BaseDistribution) -> bool
 
         with self._lock:
+            self.check_trial_is_updatable(trial_id, self.trials[trial_id].state)
+
             # Check param distribution compatibility with previous trial(s).
             if param_name in self.param_distribution:
                 distributions.check_distribution_compatibility(self.param_distribution[param_name],
                                                                distribution)
 
             # Check param has not been set; otherwise, return False.
-            param_value_external = distribution.to_external_repr(param_value_internal)
             if param_name in self.trials[trial_id].params:
                 return False
 
@@ -175,9 +188,16 @@ class InMemoryStorage(base.BaseStorage):
 
             # Set param.
             self.trials[trial_id].params_in_internal_repr[param_name] = param_value_internal
-            self.trials[trial_id].params[param_name] = param_value_external
+            self.trials[trial_id].params[param_name] = distribution.to_external_repr(
+                param_value_internal)
+            self.trials[trial_id].distributions[param_name] = distribution
 
             return True
+
+    def get_trial_number_from_id(self, trial_id):
+        # type: (int) -> int
+
+        return trial_id
 
     def get_trial_param(self, trial_id, param_name):
         # type: (int, str) -> float
@@ -188,12 +208,16 @@ class InMemoryStorage(base.BaseStorage):
         # type: (int, float) -> None
 
         with self._lock:
+            self.check_trial_is_updatable(trial_id, self.trials[trial_id].state)
+
             self.trials[trial_id] = self.trials[trial_id]._replace(value=value)
 
     def set_trial_intermediate_value(self, trial_id, step, intermediate_value):
         # type: (int, int, float) -> bool
 
         with self._lock:
+            self.check_trial_is_updatable(trial_id, self.trials[trial_id].state)
+
             values = self.trials[trial_id].intermediate_values
             if step in values:
                 return False
@@ -206,12 +230,16 @@ class InMemoryStorage(base.BaseStorage):
         # type: (int, str, Any) -> None
 
         with self._lock:
+            self.check_trial_is_updatable(trial_id, self.trials[trial_id].state)
+
             self.trials[trial_id].user_attrs[key] = value
 
     def set_trial_system_attr(self, trial_id, key, value):
         # type: (int, str, Any) -> None
 
         with self._lock:
+            self.check_trial_is_updatable(trial_id, self.trials[trial_id].state)
+
             self.trials[trial_id].system_attrs[key] = value
 
     def get_trial(self, trial_id):

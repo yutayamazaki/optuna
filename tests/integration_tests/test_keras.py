@@ -1,27 +1,16 @@
+from keras.layers import Dense
+from keras import Sequential
 import numpy as np
-
 import pytest
-
-# TODO(higumachan): remove this "try-except" section after Tensorflow supports Python 3.7.
-try:
-    from keras.layers import Dense
-    from keras import Sequential
-    _available = True
-except ImportError:
-    _available = False
 
 import optuna
 from optuna.integration import KerasPruningCallback
+from optuna.testing.integration import create_running_trial
 from optuna.testing.integration import DeterministicPruner
 
 
 def test_keras_pruning_callback():
     # type: () -> None
-
-    # TODO(higumachan): remove this "if" section after Tensorflow supports Python 3.7.
-    if not _available:
-        pytest.skip('This test requires keras '
-                    'but this version can not install keras(tensorflow) with pip.')
 
     def objective(trial):
         # type: (optuna.trial.Trial) -> float
@@ -52,13 +41,8 @@ def test_keras_pruning_callback():
 def test_keras_pruning_callback_observation_isnan():
     # type: () -> None
 
-    # TODO(higumachan): remove this "if" section after Tensorflow supports Python 3.7.
-    if not _available:
-        pytest.skip('This test requires keras '
-                    'but this version can not install keras(tensorflow) with pip.')
-
     study = optuna.create_study(pruner=DeterministicPruner(True))
-    trial = study._run_trial(func=lambda _: 1.0, catch=(Exception, ))
+    trial = create_running_trial(study, 1.0)
     callback = KerasPruningCallback(trial, 'loss')
 
     with pytest.raises(optuna.structs.TrialPruned):
