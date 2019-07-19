@@ -129,7 +129,7 @@ class MPIStudy(object):
             self.comm.bcast(False)
         else:
             while True:
-                has_next_trial, trial_id = self.comm.bcast(None)
+                has_next_trial = self.comm.bcast(None)
                 if not has_next_trial:
                     break
                 try:
@@ -286,8 +286,8 @@ class MPITrial(BaseTrial):
         # type: () -> int
 
         warnings.warn(
-            'The use of `ChainerMNTrial.trial_id` is deprecated. '
-            'Please use `ChainerMNTrial.number` instead.', DeprecationWarning)
+            'The use of `MPITrial.trial_id` is deprecated. '
+            'Please use `MPITrial.number` instead.', DeprecationWarning)
         return self._trial_id
 
     @property

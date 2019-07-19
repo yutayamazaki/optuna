@@ -95,7 +95,8 @@ def objective(trial, comm):
 
     # Horovod: save checkpoints only on worker 0 to prevent other workers from
     # corrupting them.
-    model_dir = "{}/{}".format(MODEL_DIR, trial.trial_id) if hvd.rank() == 0 else None
+    trial_number = trial.number
+    model_dir = "{}/{}".format(MODEL_DIR, trial_number) if hvd.rank() == 0 else None
     if model_dir is not None:
         # Delete old model.
         shutil.rmtree(model_dir, ignore_errors=True)
