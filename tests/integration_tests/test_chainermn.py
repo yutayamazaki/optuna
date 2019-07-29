@@ -37,7 +37,7 @@ try:
 except ImportError:
     _available = False
 
-STORAGE_MODES = ['new', 'common']
+STORAGE_MODES = ['none', 'new', 'common']
 PRUNER_INIT_FUNCS = [lambda: pruners.MedianPruner(), lambda: pruners.SuccessiveHalvingPruner()]
 CACHE_MODES = [True, False]
 
@@ -81,10 +81,13 @@ class MultiNodeStorageSupplier(StorageSupplier):
 
         super(MultiNodeStorageSupplier, self).__init__(storage_specifier, cache_mode)
         self.comm = comm
-        self.storage = None  # type: Optional[RDBStorage]
+        self.storage = None  # type: Optional[BaseStorage]
 
     def __enter__(self):
-        # type: () -> RDBStorage
+        # type: () -> BaseStorage
+
+        if self.storage_specifier == 'none':
+            return InMemoryStorage()
 
         if self.comm.rank == 0:
             storage = super(MultiNodeStorageSupplier, self).__enter__()
@@ -140,6 +143,9 @@ class TestChainerMNStudy(object):
 
         TestChainerMNStudy._check_multi_node(comm)
 
+        if storage_mode == 'none':
+            pytest.skip('InMemoryStorage does not support multiple studies.')
+
         with MultiNodeStorageSupplier(storage_mode, cache_mode, comm) as storage:
             # Create study_name for each rank.
             name = create_study(storage).study_name
@@ -147,15 +153,6 @@ class TestChainerMNStudy(object):
 
             with pytest.raises(ValueError):
                 ChainerMNStudy(study, comm)
-
-    @staticmethod
-    def test_init_with_incompatible_storage(comm):
-        # type: (CommunicatorBase) -> None
-
-        study = TestChainerMNStudy._create_shared_study(InMemoryStorage(), comm)
-
-        with pytest.raises(ValueError):
-            ChainerMNStudy(study, comm)
 
     @staticmethod
     @pytest.mark.parametrize('storage_mode', STORAGE_MODES)
@@ -171,6 +168,11 @@ class TestChainerMNStudy(object):
             n_trials = 20
             func = Func()
             mn_study.optimize(func, n_trials=n_trials)
+
+            if comm.rank != 0 and isinstance(storage, InMemoryStorage):
+                # `ChainerMNStudy` with `InMemoryStorage` does not support `trials` calls
+                # from non rank-0 nodes.
+                return
 
             # Assert trial counts.
             assert len(mn_study.trials) == n_trials
@@ -200,6 +202,11 @@ class TestChainerMNStudy(object):
             n_trials = 20
             mn_study.optimize(objective, n_trials=n_trials)
 
+            if comm.rank != 0 and isinstance(storage, InMemoryStorage):
+                # `ChainerMNStudy` with `InMemoryStorage` does not support `trials` calls
+                # from non rank-0 nodes.
+                return
+
             # Assert trial count.
             assert len(mn_study.trials) == n_trials
 
@@ -226,6 +233,11 @@ class TestChainerMNStudy(object):
             n_trials = 20
             mn_study.optimize(objective, n_trials=n_trials, catch=(ValueError, ))
 
+            if comm.rank != 0 and isinstance(storage, InMemoryStorage):
+                # `ChainerMNStudy` with `InMemoryStorage` does not support `trials` calls
+                # from non rank-0 nodes.
+                return
+
             # Assert trial count.
             assert len(mn_study.trials) == n_trials
 
@@ -233,15 +245,33 @@ class TestChainerMNStudy(object):
             failed_trials = [t for t in mn_study.trials if t.state == TrialState.FAIL]
             assert len(failed_trials) == n_trials
 
-            # Synchronize nodes before executing the next optimization.
-            comm.mpi_comm.barrier()
+    @staticmethod
+    @pytest.mark.parametrize('storage_mode', STORAGE_MODES)
+    @pytest.mark.parametrize('cache_mode', CACHE_MODES)
+    def test_failure_reject_exceptions(storage_mode, cache_mode, comm):
+        # type: (str, bool, CommunicatorBase) -> None
+
+        with MultiNodeStorageSupplier(storage_mode, cache_mode, comm) as storage:
+            study = TestChainerMNStudy._create_shared_study(storage, comm)
+            mn_study = ChainerMNStudy(study, comm)
+
+            def objective(_trial, _comm):
+                # type: (ChainerMNTrial, bool) -> float
+
+                raise ValueError  # Always fails.
 
             # Invoke optimize in which no exceptions are accepted.
+            n_trials = 20
             with pytest.raises(ValueError):
                 mn_study.optimize(objective, n_trials=n_trials, catch=())
 
+            if comm.rank != 0 and isinstance(storage, InMemoryStorage):
+                # `ChainerMNStudy` with `InMemoryStorage` does not support `trials` calls
+                # from non rank-0 nodes.
+                return
+
             # Assert trial count.
-            assert len(mn_study.trials) == n_trials + 1
+            assert len(mn_study.trials) == 1
 
             # Assert aborted trial count.
             aborted_trials = [t for t in mn_study.trials if t.state == TrialState.RUNNING]
@@ -270,6 +300,11 @@ class TestChainerMNStudy(object):
             n_trials = 20
             func = Func()
             mn_study.optimize(func, n_trials=n_trials)
+
+            if comm.rank != 0 and isinstance(storage, InMemoryStorage):
+                # `ChainerMNStudy` with `InMemoryStorage` does not support `trials` calls
+                # from non rank-0 nodes.
+                return
 
             # Assert trial counts.
             assert len(mn_study.trials) == n_trials
@@ -305,7 +340,17 @@ class TestChainerMNTrial(object):
         with MultiNodeStorageSupplier(storage_mode, cache_mode, comm) as storage:
             study = TestChainerMNStudy._create_shared_study(storage, comm)
             mn_trial = _create_new_chainermn_trial(study, comm)
-            trial = study.trials[-1]
+
+            if isinstance(storage, InMemoryStorage):
+                # `ChainerMNStudy` with `InMemoryStorage` does not support `trials` calls
+                # from non rank-0 nodes.
+                if comm.rank == 0:
+                    trial = study.trials[-1]
+                    comm.mpi_comm.bcast(trial)
+                else:
+                    trial = comm.mpi_comm.bcast(None)
+            else:
+                trial = study.trials[-1]
 
             assert mn_trial.trial_id == trial.trial_id
             assert mn_trial._trial_id == trial.trial_id

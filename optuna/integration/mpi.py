@@ -94,7 +94,10 @@ class MPIStudy(object):
         # type: (...) -> None
 
         if isinstance(study.storage, InMemoryStorage):
-            raise ValueError('MPI integration is not available with InMemoryStorage.')
+            logger = get_logger(__name__)
+            logger.warning('Some methods such as `trials`, `best_trial` and `direction` of '
+                           '`MPIStudy` only work in rank-0 node if it is used with '
+                           'InMemoryStorage.')
 
         if isinstance(study.storage, RDBStorage):
             if study.storage.engine.dialect.name == 'sqlite':
