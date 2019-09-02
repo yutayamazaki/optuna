@@ -65,7 +65,6 @@ class RDBStorage(BaseStorage):
             raise ImportError('Failed to import DB access module for the specified storage URL. '
                               'Please install appropriate one. (The actual import error is: ' +
                               str(e) + '.)')
-
         self.scoped_session = orm.scoped_session(orm.sessionmaker(bind=self.engine))
         models.BaseModel.metadata.create_all(self.engine)
 
@@ -88,6 +87,7 @@ class RDBStorage(BaseStorage):
         study = models.StudyModel(study_name=study_name, direction=structs.StudyDirection.NOT_SET)
         session.add(study)
         if not self._commit_with_integrity_check(session):
+            session.close()
             raise structs.DuplicatedStudyError(
                 "Another study with name '{}' already exists. "
                 "Please specify a different name, or reuse the existing one "
@@ -95,8 +95,11 @@ class RDBStorage(BaseStorage):
                 "`--skip-if-exists` flag (for CLI).".format(study_name))
 
         self.logger.info('A new study created with name: {}'.format(study.study_name))
+        study_id = study.study_id
 
-        return study.study_id
+        session.close()
+
+        return study_id
 
     @staticmethod
     def _create_unique_study_name(session):
@@ -126,6 +129,7 @@ class RDBStorage(BaseStorage):
         study.direction = direction
 
         self._commit(session)
+        session.close()
 
     def set_study_user_attr(self, study_id, key, value):
         # type: (int, str, Any) -> None
@@ -142,6 +146,7 @@ class RDBStorage(BaseStorage):
             attribute.value_json = json.dumps(value)
 
         self._commit_with_integrity_check(session)
+        session.close()
 
     def set_study_system_attr(self, study_id, key, value):
         # type: (int, str, Any) -> None
@@ -158,6 +163,7 @@ class RDBStorage(BaseStorage):
             attribute.value_json = json.dumps(value)
 
         self._commit_with_integrity_check(session)
+        session.close()
 
     def get_study_id_from_name(self, study_name):
         # type: (str) -> int
@@ -165,8 +171,11 @@ class RDBStorage(BaseStorage):
         session = self.scoped_session()
 
         study = models.StudyModel.find_or_raise_by_name(study_name, session)
+        study_id = study.study_id
 
-        return study.study_id
+        session.close()
+
+        return study_id
 
     def get_study_id_from_trial_id(self, trial_id):
         # type: (int) -> int
@@ -174,8 +183,11 @@ class RDBStorage(BaseStorage):
         session = self.scoped_session()
 
         trial = models.TrialModel.find_or_raise_by_id(trial_id, session)
+        study_id = trial.study_id
 
-        return trial.study_id
+        session.close()
+
+        return study_id
 
     def get_study_name_from_id(self, study_id):
         # type: (int) -> str
@@ -183,8 +195,11 @@ class RDBStorage(BaseStorage):
         session = self.scoped_session()
 
         study = models.StudyModel.find_or_raise_by_id(study_id, session)
+        study_name = study.study_name
 
-        return study.study_name
+        session.close()
+
+        return study_name
 
     def get_study_direction(self, study_id):
         # type: (int) -> structs.StudyDirection
@@ -192,8 +207,11 @@ class RDBStorage(BaseStorage):
         session = self.scoped_session()
 
         study = models.StudyModel.find_or_raise_by_id(study_id, session)
+        direction = study.direction
 
-        return study.direction
+        session.close()
+
+        return direction
 
     def get_study_user_attrs(self, study_id):
         # type: (int) -> Dict[str, Any]
@@ -201,6 +219,8 @@ class RDBStorage(BaseStorage):
         session = self.scoped_session()
 
         attributes = models.StudyUserAttributeModel.where_study_id(study_id, session)
+
+        session.close()
 
         return {attr.key: json.loads(attr.value_json) for attr in attributes}
 
@@ -210,8 +230,11 @@ class RDBStorage(BaseStorage):
         session = self.scoped_session()
 
         attributes = models.StudySystemAttributeModel.where_study_id(study_id, session)
+        system_attrs = {attr.key: json.loads(attr.value_json) for attr in attributes}
 
-        return {attr.key: json.loads(attr.value_json) for attr in attributes}
+        session.close()
+
+        return system_attrs
 
     def get_trial_user_attrs(self, trial_id):
         # type: (int) -> Dict[str, Any]
@@ -219,8 +242,11 @@ class RDBStorage(BaseStorage):
         session = self.scoped_session()
 
         attributes = models.TrialUserAttributeModel.where_trial_id(trial_id, session)
+        user_attrs = {attr.key: json.loads(attr.value_json) for attr in attributes}
 
-        return {attr.key: json.loads(attr.value_json) for attr in attributes}
+        session.close()
+
+        return user_attrs
 
     def get_trial_system_attrs(self, trial_id):
         # type: (int) -> Dict[str, Any]
@@ -228,8 +254,11 @@ class RDBStorage(BaseStorage):
         session = self.scoped_session()
 
         attributes = models.TrialSystemAttributeModel.where_trial_id(trial_id, session)
+        system_attrs = {attr.key: json.loads(attr.value_json) for attr in attributes}
 
-        return {attr.key: json.loads(attr.value_json) for attr in attributes}
+        session.close()
+
+        return system_attrs
 
     # TODO(sano): Optimize this method to reduce the number of queries.
     def get_all_study_summaries(self):
@@ -301,6 +330,8 @@ class RDBStorage(BaseStorage):
                     n_trials=len(study_trial_models),
                     datetime_start=datetime_start))
 
+        session.close()
+
         return study_sumarries
 
     def create_new_trial_id(self, study_id):
@@ -312,10 +343,13 @@ class RDBStorage(BaseStorage):
 
         session.add(trial)
         self._commit(session)
+        trial_id = trial.trial_id
 
-        self._create_new_trial_number(trial.trial_id)
+        session.close()
 
-        return trial.trial_id
+        self._create_new_trial_number(trial_id)
+
+        return trial_id
 
     def _create_new_trial_number(self, trial_id):
         # type: (int) -> int
@@ -325,6 +359,8 @@ class RDBStorage(BaseStorage):
 
         trial_number = trial.count_past_trials(session)
         self.set_trial_system_attr(trial.trial_id, '_number', trial_number)
+
+        session.close()
 
         return trial_number
 
@@ -358,6 +394,8 @@ class RDBStorage(BaseStorage):
             distributions.check_distribution_compatibility(
                 distributions.json_to_distribution(trial_param.distribution_json), distribution)
 
+            session.close()
+
             # Return False when distribution is compatible but parameter has already been set.
             return False
 
@@ -370,6 +408,8 @@ class RDBStorage(BaseStorage):
         param.check_and_add(session)
         commit_success = self._commit_with_integrity_check(session)
 
+        session.close()
+
         return commit_success
 
     def get_trial_param(self, trial_id, param_name):
@@ -380,8 +420,11 @@ class RDBStorage(BaseStorage):
         trial = models.TrialModel.find_or_raise_by_id(trial_id, session)
         trial_param = models.TrialParamModel.find_or_raise_by_trial_and_param_name(
             trial, param_name, session)
+        param_value = trial_param.param_value
 
-        return trial_param.param_value
+        session.close()
+
+        return param_value
 
     def set_trial_value(self, trial_id, value):
         # type: (int, float) -> None
@@ -394,6 +437,7 @@ class RDBStorage(BaseStorage):
         trial.value = value
 
         self._commit(session)
+        session.close()
 
     def set_trial_intermediate_value(self, trial_id, step, intermediate_value):
         # type: (int, int, float) -> bool
@@ -405,6 +449,7 @@ class RDBStorage(BaseStorage):
 
         trial_value = models.TrialValueModel.find_by_trial_and_step(trial, step, session)
         if trial_value is not None:
+            session.close()
             return False
 
         trial_value = models.TrialValueModel(
@@ -412,6 +457,7 @@ class RDBStorage(BaseStorage):
 
         session.add(trial_value)
         commit_success = self._commit_with_integrity_check(session)
+        session.close()
 
         return commit_success
 
@@ -432,6 +478,7 @@ class RDBStorage(BaseStorage):
             attribute.value_json = json.dumps(value)
 
         self._commit_with_integrity_check(session)
+        session.close()
 
     def set_trial_system_attr(self, trial_id, key, value):
         # type: (int, str, Any) -> None
@@ -459,6 +506,7 @@ class RDBStorage(BaseStorage):
             attribute.value_json = json.dumps(value)
 
         self._commit_with_integrity_check(session)
+        session.close()
 
     def get_trial_number_from_id(self, trial_id):
         # type: (int) -> int
@@ -490,6 +538,8 @@ class RDBStorage(BaseStorage):
 
         self._finished_trials_cache.cache_trial_if_finished(frozen_trial)
 
+        session.close()
+
         return frozen_trial
 
     def get_all_trials(self, study_id):
@@ -511,7 +561,9 @@ class RDBStorage(BaseStorage):
 
         session = self.scoped_session()
         study = models.StudyModel.find_or_raise_by_id(study_id, session)
-        return models.TrialModel.get_all_trial_ids_where_study(study, session)
+        trial_ids = models.TrialModel.get_all_trial_ids_where_study(study, session)
+        session.close()
+        return trial_ids
 
     def _get_all_trials_without_cache(self, study_id):
         # type: (int) -> List[structs.FrozenTrial]
@@ -525,6 +577,8 @@ class RDBStorage(BaseStorage):
         user_attributes = models.TrialUserAttributeModel.where_study(study, session)
         system_attributes = models.TrialSystemAttributeModel.where_study(study, session)
 
+        session.close()
+
         return self._merge_trials_orm(trials, params, values, user_attributes, system_attributes)
 
     def get_n_trials(self, study_id, state=None):
@@ -532,7 +586,10 @@ class RDBStorage(BaseStorage):
 
         session = self.scoped_session()
         study = models.StudyModel.find_or_raise_by_id(study_id, session)
-        return models.TrialModel.count(session, study, state)
+        n_trials = models.TrialModel.count(session, study, state)
+        session.close()
+
+        return n_trials
 
     def _merge_trials_orm(
             self,
@@ -729,6 +786,7 @@ class _VersionManager(object):
 
         version_info = models.VersionInfoModel.find(session)
         if version_info is not None:
+            session.close()
             return
 
         version_info = models.VersionInfoModel(
@@ -736,6 +794,7 @@ class _VersionManager(object):
 
         session.add(version_info)
         RDBStorage._commit_with_integrity_check(session)
+        session.close()
 
     def _init_alembic(self):
         # type: () -> None
@@ -772,6 +831,7 @@ class _VersionManager(object):
         # NOTE: After invocation of `_init_version_info_model` method,
         #       it is ensured that a `VersionInfoModel` entry exists.
         version_info = models.VersionInfoModel.find(session)
+        session.close()
         assert version_info is not None
 
         current_version = self.get_current_version()
@@ -831,11 +891,15 @@ class _VersionManager(object):
         session = self.scoped_session()
 
         version_info = models.VersionInfoModel.find(session)
+
         if version_info is None:
             # `None` means this storage was created just now.
+            session.close()
             return True
 
-        return version_info.schema_version == models.SCHEMA_VERSION
+        is_supported = version_info.schema_version == models.SCHEMA_VERSION
+        session.close()
+        return is_supported
 
     def _create_alembic_script(self):
         # type: () -> alembic.script.ScriptDirectory
