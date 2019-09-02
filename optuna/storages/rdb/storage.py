@@ -219,10 +219,11 @@ class RDBStorage(BaseStorage):
         session = self.scoped_session()
 
         attributes = models.StudyUserAttributeModel.where_study_id(study_id, session)
+        user_attrs = {attr.key: json.loads(attr.value_json) for attr in attributes}
 
         session.close()
 
-        return {attr.key: json.loads(attr.value_json) for attr in attributes}
+        return user_attrs
 
     def get_study_system_attrs(self, study_id):
         # type: (int) -> Dict[str, Any]
