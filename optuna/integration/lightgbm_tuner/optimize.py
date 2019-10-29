@@ -5,11 +5,13 @@ import time
 import lightgbm as lgb
 import numpy as np
 import tqdm
+import random
 
 import optuna
 from optuna.integration.lightgbm_tuner.alias import _handling_alias_parameters
 from optuna import type_checking
-
+from optuna.samplers import BaseSampler, TPESampler
+from optuna import distributions
 
 if type_checking.TYPE_CHECKING:
     from typing import Any  # NOQA
@@ -22,7 +24,7 @@ if type_checking.TYPE_CHECKING:
     from typing import Union  # NOQA
 
     from optuna.distributions import BaseDistribution  # NOQA
-    from optuna.structs import FrozenTrial  # NOQA
+    from optuna.structs import FrozenTrial, TrialState  # NOQA
     from optuna.study import Study  # NOQA
     from optuna.trial import Trial  # NOQA
 
@@ -31,6 +33,16 @@ if type_checking.TYPE_CHECKING:
 
 # EPS is used to ensure that a sampled parameter value is in pre-defined value range.
 EPS = 1e-12
+
+
+class _Step(object):
+
+    def __init__(self, target_params, min_n_trials, sampler):
+        # type: (List[str], int, BaseSampler) -> None
+
+        self.min_n_trials = min_n_trials
+        self.sampler = sampler
+        self.target_params = target_params
 
 
 class _GridSamplerUniform1D(optuna.samplers.BaseSampler):
@@ -62,6 +74,157 @@ class _GridSamplerUniform1D(optuna.samplers.BaseSampler):
 
         distribution = optuna.distributions.UniformDistribution(-float('inf'), float('inf'))
         return {self.param_name: distribution}
+
+
+class _AdaptiveFeatureFractionSampler(BaseSampler):
+
+    def __init__(self, n_grids):
+        # type: (str, Any) -> None
+
+        self.n_grids = n_grids
+        self.param_name = 'feature_fraction'
+
+    def infer_relative_search_space(self, study, trial):
+        # type: (Study, FrozenTrial) -> Dict[str, BaseDistribution]
+
+        distribution = optuna.distributions.UniformDistribution(-float('inf'), float('inf'))
+        return {self.param_name: distribution}
+
+    def sample_relative(self, study, trial, search_space):
+        # type: (Study, FrozenTrial, Dict[str, BaseDistribution]) -> Dict[str, float]
+
+        # todo: implement this!
+        # call target_grid_idx
+        # set grid_idx to system attr
+        # return the value with the grid index.
+        raise NotImplementedError()
+
+    def sample_independent(self, study, trial, param_name, param_distribution):
+        # type: (Study, FrozenTrial, str, BaseDistribution) -> None
+
+        raise ValueError(
+            'Suggest method is called for an invalid parameter: {}.'.format(param_name))
+
+    def all_grids(self, study, trial):
+        # type: (Study, FrozenTrial) -> List[float]
+
+        # Get grid based on the best trial. `ref_trial_id` is supposed to set by `StepWiseSampler`.
+        ref_trial_id = study._storage.get_trial_system_attr(trial.trial_id, 'ref_trial_id')
+        ref_trial = study._storage.get_trial(ref_trial_id)
+        center_value = ref_trial.params[self.param_name]
+
+        return list(np.linspace(center_value - 0.08, center_value + 0.08, self.n_grids))
+
+    def target_grid_idx(self, study, trial):
+        # type: (Study, FrozenTrial) -> Optional[int]
+
+        # `step_idx` is supposed to set by `StepWiseSampler`.
+        ref_trial_id = study._storage.get_trial_system_attr(trial.trial_id, 'ref_trial_id')
+        step_idx = study._storage.get_trial_system_attr(trial.trial_id, 'step_idx')
+
+        # Get completed trials in the same step and having the same reference trial.
+        trials = study.trials
+        trials = [t for t in trials if t.state == TrialState.COMPLETE]
+        trials = [t for t in trials if t.system_attrs['step_idx'] == step_idx]
+        trials = [t for t in trials if t.system_attrs['ref_trial_id'] == ref_trial_id]
+
+        # Get a random index not sampled by completed trials.
+        grid_indices = set(range(len(self.n_grids)))
+        for t in trials:
+            grid_indices.remove(t.system_attrs['grid_idx'])
+
+        if len(grid_indices) == 0:
+            return None
+
+        return random.choice(grid_indices)
+
+
+_DEFAULT_STEPS = [
+    _Step(
+        ['feature_fraction'], 7, _GridSamplerUniform1D('feature_fraction', list(np.linspace(0.4, 1.0, 7)))
+    ),
+    _Step(
+        ['num_leaves'], 20, TPESampler()
+    ),
+    _Step(
+        ['bagging_fraction', 'bagging_freq'], 10, TPESampler()
+    ),
+    _Step(
+        ['feature_fraction'], 6, _AdaptiveFeatureFractionSampler(6)
+    ),
+    _Step(
+        ['lambda_l1', 'lambda_l2'], 20, TPESampler()
+    ),
+    _Step(
+        ['min_child_samples'], 20, _GridSamplerUniform1D('min_child_samples', [5, 10, 25, 50, 100])
+    ),
+]
+
+
+class _StepWiseSampler(BaseSampler):
+
+    full_search_space = {
+        'lambda_l1': distributions.LogUniformDistribution(1e-8, 10.0),
+        'lambda_l2': distributions.LogUniformDistribution(1e-8, 10.0),
+        'max_depth': distributions.IntUniformDistribution(2, 2 ** 8),
+        'bagging_fraction': distributions.UniformDistribution(0.4, 1.0 + EPS),
+        'bagging_freq': distributions.IntUniformDistribution(1, 7),
+        'min_child_samples': distributions.UniformDistribution(5, 100 + EPS),
+    }
+
+    def __init__(self, initial_params, steps=None):
+        # type: (Dict[str, float], List[_Step]) -> None
+
+        self.initial_params = initial_params
+        self.steps = steps or _DEFAULT_STEPS
+
+    def infer_relative_search_space(self, study, trial):
+        # type: (Study, FrozenTrial) -> Dict[str, BaseDistribution]
+
+        step_idx = self.current_step_idx(study)
+        step = self.steps[step_idx]
+        best_trial = study.best_trial
+
+        study._storage.set_trial_system_attr(trial.trial_id, 'step_idx', step_idx)
+        study._storage.set_trial_system_attr(trial.trial_id, 'target_params', step.target_params)
+        study._storage.set_trial_system_attr(trial.trial_id, 'ref_trial_id', best_trial.trial_id)
+
+        return step.sampler.infer_relative_search_space(study, trial)
+
+    def sample_relative(self, study, trial, search_space):
+        # type: (Study, FrozenTrial, Dict[str, BaseDistribution]) -> Dict[str, Any]
+
+        step_idx = study._storage.get_trial_system_attr(trial.trial_id, 'step_idx')
+        step = self.steps[step_idx]
+
+        return step.sampler.sample_relative(study, trial, search_space)
+
+    def sample_independent(self, study, trial, param_name, param_distribution):
+        # type: (Study, FrozenTrial, str, BaseDistribution) -> Any
+
+        step_idx = study._storage.get_trial_system_attr(trial.trial_id, 'step_idx')
+        step = self.steps[step_idx]
+
+        if param_name not in step.target_params:
+            ref_trial_id = study._storage.get_trial_system_attr(trial.trial_id, 'ref_trial_id')
+            param = study._storage.get_trial_param(ref_trial_id, param_name)
+
+            return param
+
+        return step.sampler.sample_independent(study, trial, param_name, param_distribution)
+
+    def current_step_idx(self, study):
+        # type: (Study) -> Optional[int]
+
+        idx = 0
+        n_trials = len([t for t in study.trials if t.state == TrialState.COMPLETE])
+        for step in self.steps:
+            if step.min_n_trials > n_trials:
+                return idx
+            n_trials -= step.min_n_trials
+            idx += 1
+
+        return None
 
 
 class _TimeKeeper(object):
