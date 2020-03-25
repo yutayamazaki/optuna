@@ -23,12 +23,21 @@ def plot_intermediate_values(study):
 
         .. testcode::
 
+            import numpy as np
             import optuna
+            from sklearn.datasets import load_breast_cancer
+            from sklearn.linear_model import SGDClassifier
+            from sklearn.model_selection import train_test_split
 
             def objective(trial):
-                x = trial.suggest_uniform('x', -100, 100)
-                y = trial.suggest_categorical('y', [-1, 0, 1])
-                return x ** 2 + y
+                clf = SGDClassifier(random_state=0)
+                X, y = load_breast_cancer(return_X_y=True)
+                X_train, X_test, y_train, y_test = train_test_split(X, y, shuffle=True)
+                for step in range(100):
+                    clf.partial_fit(X_train, y_train, np.unique(y))
+                    intermediate_value = clf.score(X_test, y_test)
+                    trial.report(intermediate_value, step=step)
+                return clf.score(X_test, y_test)
 
             study = optuna.create_study()
             study.optimize(objective, n_trials=10)
